@@ -20,7 +20,6 @@ namespace JHAllowedIDCreation
         static Config config;
         static string[] exclusionPatientID = [];
         static string[] inclusionPatientID = [];
-        static List<string> NgcpPatientList = new List<string>();
 
         private static Config? cheakConfigFile()
         {

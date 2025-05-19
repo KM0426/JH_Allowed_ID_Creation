@@ -15,8 +15,12 @@ namespace JHAllowedIDCreation
 {
     class Program
     {
+        static ConcurrentDictionary<string, int> groupCounts = new ConcurrentDictionary<string, int>();
+
         static Config config;
-        static string[] exclusionPatientID;
+        static string[] exclusionPatientID = [];
+        static string[] inclusionPatientID = [];
+        static List<string> NgcpPatientList = new List<string>();
 
         private static Config? cheakConfigFile()
         {
@@ -32,7 +36,8 @@ namespace JHAllowedIDCreation
 @"{
     ""SSMIX2"": {
         ""dataPath"": ""D:\\SSMIX2\\data"",
-        ""getChikenID"": false
+        ""getChikenID"": false,
+        ""exclusionDays"":365
     },
     ""MNGCP"":{
         ""db_host"": ""localhost"",
@@ -72,9 +77,10 @@ namespace JHAllowedIDCreation
                 }
             }
         }
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            Config? config = cheakConfigFile();
+            exclusionPatientID = [];
+            config = cheakConfigFile();
             if (config == null)
             {
                 Console.ReadKey();
@@ -110,7 +116,9 @@ namespace JHAllowedIDCreation
                         // csvファイルを読み込む
                         // ヘッダー無し、カンマ区切り、Shift_JIS
                         // すべての行を読み込む
-                        exclusionPatientID = File.ReadAllLines(filePath, Encoding.GetEncoding("UTF-8"));
+                        var TempExclusionPatientID = File.ReadAllLines(filePath, Encoding.GetEncoding("UTF-8"));
+                        // TempExclusionPatientIDを10桁左0埋めの半角英数字に変換してexclusionPatientIDに追加
+                        exclusionPatientID = TempExclusionPatientID.Select(x => x.Trim().PadLeft(10, '0')).ToArray();
                     }
                     else
                     {
@@ -125,6 +133,8 @@ namespace JHAllowedIDCreation
                     {
                         connection.Open();
                         Console.WriteLine("NMGCP接続成功");
+
+                        // NMGCPから患者IDを取得
                         var query = "SELECT * FROM " + config.MNGCP.db_table_name;
                         using (var cmd = new NpgsqlCommand(query, connection))
                         using (var reader = cmd.ExecuteReader())
@@ -132,7 +142,13 @@ namespace JHAllowedIDCreation
                             // データ行出力
                             while (reader.Read())
                             {
-                                var value = reader.IsDBNull(2) ? "" : reader.GetValue(2).ToString();
+                                var value = reader.IsDBNull(1) ? "" : reader.GetValue(1).ToString();
+                                if (value != null)
+                                {
+                                    // 患者IDを取得
+                                    // exclusionPatientIDに追加
+                                    exclusionPatientID = exclusionPatientID.Append(value).ToArray();
+                                }
                             }
                         }
 
@@ -148,11 +164,211 @@ namespace JHAllowedIDCreation
                 }
             }
 
-
             // SSMIX2フォルダの解析スタート
+            Console.WriteLine("SSMIX2フォルダの解析スタート...");
+            await SSMIX2FolderParse();
 
-            // NM<GCPから患者IDを取得
 
+        }
+        // SSMIX2フォルダの解析
+        private static async Task SSMIX2FolderParse()
+        {
+            List<Task> tasks = new List<Task>();
+            // 先頭3文字フォルダ（例: "000", "001", ...）を列挙
+            var topFolders = Directory.GetDirectories(config.SSMIX2.dataPath);
+            foreach (var topFolder in topFolders)
+            {
+                // 中位フォルダ（患者ID 4～6文字）の列挙
+                var midFolders = Directory.GetDirectories(topFolder);
+                foreach (var midFolder in midFolders)
+                {
+                    // 中位フォルダ単位でタスクを生成し、並列実行
+                    tasks.Add(Task.Run(() => ProcessMidFolder(midFolder)));
+                }
+            }
+
+            await Task.WhenAll(tasks);
+
+            // 集計結果を CSV へ出力
+            OutputToCsv();
+            
+            Console.WriteLine("全処理が完了しました。");
+        }
+        static long completedPatientCount = 0;
+        static void ProcessMidFolder(string midFolder)
+        {
+            var patientFolders = Directory.GetDirectories(midFolder);
+            Parallel.ForEach(patientFolders,
+                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 16 },
+                patientFolder =>
+                {
+                    ProcessPatientFolder(patientFolder);
+                    long count = Interlocked.Increment(ref completedPatientCount);
+                    if (count % 500 == 0)
+                    {
+                        Console.WriteLine($"{count} 患者フォルダの処理が完了しました。");
+                    }
+                });
+        }
+        static void ProcessPatientFolder(string patientFolder)
+        {
+            try
+            {
+                // 患者IDはフォルダ名
+                string patientId = Path.GetFileName(patientFolder);
+                if (exclusionPatientID != null && exclusionPatientID.Contains(patientId))
+                {
+                    // Console.WriteLine($"[警告] 除外患者ID: {patientId}");
+                    return;
+                }
+                var fileItems = new List<(string filePath, string visitDate, string folderDataType)>();
+
+                // 診療日フォルダ（例：YYYYMMDD）が並ぶ
+                var visitDateFolders = Directory.GetDirectories(patientFolder);
+                DateTime cutDate = DateTime.Now.AddDays(-config.SSMIX2.exclusionDays);
+                foreach (var visitDateFolder in visitDateFolders)
+                {
+                    var lastText = visitDateFolder.Split(Path.DirectorySeparatorChar).Last();
+                    if (DateTime.TryParseExact(lastText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime visitDate))
+                    {
+                        // 診療日が除外日よりも古い場合はスキップ
+                        if (visitDate > cutDate)
+                        {
+                            return;
+                        }
+                    }
+                }
+                // inclusionPatientIDにpatientId追加
+                inclusionPatientID = inclusionPatientID.Append(patientId).ToArray();
+
+                foreach (var visitDateFolder in visitDateFolders)
+                {
+                    string visitDate = Path.GetFileName(visitDateFolder);
+                    // データ種別フォルダ（例: ADT-01, PPR-01 等）
+                    var dataTypeFolders = Directory.GetDirectories(visitDateFolder);
+                    foreach (var dataTypeFolder in dataTypeFolders)
+                    {
+                        string folderDataType = Path.GetFileName(dataTypeFolder);
+                        // ファイル名の末尾が "_1" のみを対象
+                        var files = Directory.GetFiles(dataTypeFolder, "*_1");
+                        foreach (var file in files)
+                        {
+                            fileItems.Add((file, visitDate, folderDataType));
+                        }
+                    }
+                }
+
+                // 各ファイルを並列に処理（高い並列度：CPUコア数の4倍程度）
+                Parallel.ForEach(fileItems,
+                    new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 16 },
+                    item =>
+                    {
+                        ProcessFile(item.filePath, patientId, item.visitDate, item.folderDataType);
+                    });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[警告] 患者フォルダ {patientFolder} の処理中にエラー: {ex.Message}");
+            }
+        }
+        static void ProcessFile(string filePath, string patientId, string visitDate, string folderDataType)
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            try
+            {
+                // ファイル名（拡張子なし）を取得
+                string fileName = Path.GetFileNameWithoutExtension(filePath);
+                var parts = fileName.Split('_');
+                if (parts.Length != 7)
+                {
+                    return;
+                }
+
+                // ファイル名に含まれるデータ種別（例: PPR-01）
+                string dataType = parts[2];
+
+                if (dataType.Equals("PPR-01", StringComparison.OrdinalIgnoreCase))
+                {
+                    // PPR-01 はファイル内容を ISO-2022-JP で読み込み、PRB セグメントから日付を取得
+                    //                    Encoding iso2022jp = Encoding.GetEncoding("ISO-2022-JP");
+                    string[] lines;
+                    try
+                    {
+                        lines = File.ReadAllLines(filePath, Encoding.GetEncoding("ISO-2022-JP"));
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine($"[警告] ファイル読み込み失敗 (PPR-01): {filePath}, {e.Message}");
+                        return;
+                    }
+
+                    // groupCounts は ConcurrentDictionary<string, int> である前提
+                    Parallel.ForEach(lines,
+                     new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 32 },
+                    line =>
+                    {
+                        if (!line.StartsWith("PRB|")) return;
+
+                        var seg = line.Split('|');
+                        if (seg.Length <= 7) return;
+
+                        string dateTimeStr = seg[7]; // 例: 20220420153210
+                        if (dateTimeStr.Length < 8) return;
+
+                        string dateStr = dateTimeStr.Substring(0, 8);
+                        string key = $"{patientId},{dateStr},PPR-01";
+
+                        groupCounts.AddOrUpdate(key, 1, (_, current) => current + 1);
+                    });
+
+                }
+                else
+                {
+                    // PPR-01 以外は、フォルダ構造上の診療日 (visitDate) を利用して1件カウント
+                    string key = $"{patientId},{visitDate},{dataType}";
+                    groupCounts.AddOrUpdate(key, 1, (k, current) => current + 1);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[警告] ファイル処理エラー: {filePath}, {ex.Message}");
+            }
+        }
+        static void OutputToCsv()
+        {
+            try
+            {
+                // user download folder
+                string outputCsvFileDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\Downloads";
+                string datetime = DateTime.Now.ToString("yyyyMMddHHmmss");
+                string filename = "result" + datetime + "_Syuukei.csv";
+                string filename2 = "result" + datetime + "_PatientIDs.csv";
+                // inclusionPatientID
+                string newOutputCsvFile = Path.Combine(outputCsvFileDir, filename);
+                using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
+                {
+                    sw.WriteLine("患者ID,診療日,データ種別,Count");
+                    foreach (var kvp in groupCounts)
+                    {
+                        sw.WriteLine($"{kvp.Key},{kvp.Value}");
+                    }
+                }
+                newOutputCsvFile = Path.Combine(outputCsvFileDir, filename2);
+                using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
+                {
+                    sw.WriteLine("出力対象患者ID");
+                    foreach (var id in inclusionPatientID)
+                    {
+                        sw.WriteLine($"{id}");
+                    }
+                }
+
+                Console.WriteLine($"CSV 出力完了: {newOutputCsvFile}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"CSV 出力エラー: {ex.Message}");
+            }
         }
     }
 }

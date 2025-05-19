@@ -4,6 +4,7 @@ namespace JHAllowedIDCreation
     {
         public string dataPath { get; set; }
         public bool getChikenID { get; set; }
+        public int exclusionDays { get; set; }
     }
     class MNGCP
     {

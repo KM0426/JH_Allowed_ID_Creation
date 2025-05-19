@@ -202,44 +202,67 @@ namespace JHAllowedIDCreation
                 new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 16 },
                 patientFolder =>
                 {
-                    ProcessPatientFolder(patientFolder);
+                    // 患者IDはフォルダ名
+                    string patientId = Path.GetFileName(patientFolder);
                     long count = Interlocked.Increment(ref completedPatientCount);
+                    if (!exclusionPatientID.Contains(patientId))
+                    {
+                        if (!checkDirDate(patientFolder))
+                        {
+                            ProcessPatientFolder(patientFolder);
+                            // inclusionPatientIDにpatientId追加
+                            inclusionPatientID = inclusionPatientID.Append(patientId).ToArray();
+
+                        }
+                    }
                     if (count % 500 == 0)
                     {
-                        Console.WriteLine($"{count} 患者フォルダの処理が完了しました。");
+                        Console.WriteLine($"{count} 患者フォルダの処理が完了しました。内提供対象:{inclusionPatientID.Length}件");
                     }
                 });
+        }
+        static bool checkDirDate(string dirPath)
+        {
+            var visitDateFolders = Directory.GetDirectories(dirPath).OrderByDescending(name => name); 
+            DateTime startDate = new DateTime(2015, 4, 1);
+            DateTime cutDate = DateTime.Now.AddDays(-config.SSMIX2.exclusionDays);
+
+            // visitDateFoldersをlinqで解析し、cutDateより新しい日付が含まれているかチェックする
+            // 日付はvisitDateFolders[i]の末尾に含まれる
+            // 例: "20230101" のような形式
+            // 末尾の文字列を取得し、DateTimeに変換
+            // 変換できたら、cutDateより新しいかチェック
+            // 一つでも新しい日付があれば、trueを返す
+            // 変換できなかったら、スキップ
+            bool keizou = true;
+            foreach (var visitDateFolder in visitDateFolders)
+            {
+                var lastText = visitDateFolder.Split(Path.DirectorySeparatorChar).Last();
+                if (DateTime.TryParseExact(lastText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime visitDate))
+                {
+                    // 診療日が除外日よりも新しい場合はスキップ
+                    if (visitDate > cutDate)
+                    {
+                        return true;
+                    }
+                    if(visitDate > startDate)
+                    {
+                        keizou = false;
+                    }
+                }
+            }
+            return keizou;
         }
         static void ProcessPatientFolder(string patientFolder)
         {
             try
             {
-                // 患者IDはフォルダ名
                 string patientId = Path.GetFileName(patientFolder);
-                if (exclusionPatientID != null && exclusionPatientID.Contains(patientId))
-                {
-                    // Console.WriteLine($"[警告] 除外患者ID: {patientId}");
-                    return;
-                }
                 var fileItems = new List<(string filePath, string visitDate, string folderDataType)>();
 
                 // 診療日フォルダ（例：YYYYMMDD）が並ぶ
-                var visitDateFolders = Directory.GetDirectories(patientFolder);
-                DateTime cutDate = DateTime.Now.AddDays(-config.SSMIX2.exclusionDays);
-                foreach (var visitDateFolder in visitDateFolders)
-                {
-                    var lastText = visitDateFolder.Split(Path.DirectorySeparatorChar).Last();
-                    if (DateTime.TryParseExact(lastText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime visitDate))
-                    {
-                        // 診療日が除外日よりも古い場合はスキップ
-                        if (visitDate > cutDate)
-                        {
-                            return;
-                        }
-                    }
-                }
-                // inclusionPatientIDにpatientId追加
-                inclusionPatientID = inclusionPatientID.Append(patientId).ToArray();
+                var visitDateFolders = Directory.GetDirectories(patientFolder).OrderByDescending(name => name); 
+            
 
                 foreach (var visitDateFolder in visitDateFolders)
                 {
@@ -364,6 +387,8 @@ namespace JHAllowedIDCreation
                 }
 
                 Console.WriteLine($"CSV 出力完了: {newOutputCsvFile}");
+                Console.WriteLine("Press any key to exit...");
+                Console.ReadKey();
             }
             catch (Exception ex)
             {

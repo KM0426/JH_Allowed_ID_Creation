@@ -36,7 +36,8 @@ namespace JHAllowedIDCreation
     ""SSMIX2"": {
         ""dataPath"": ""D:\\SSMIX2\\data"",
         ""getChikenID"": false,
-        ""exclusionDays"":365
+        ""StartDate"": ""2015-04-01"",
+        ""exclusionDays"":365        
     },
     ""MNGCP"":{
         ""db_host"": ""localhost"",
@@ -162,6 +163,8 @@ namespace JHAllowedIDCreation
                     }
                 }
             }
+            startDate = config.SSMIX2.StartDate == null ? DateTime.MinValue : DateTime.Parse(config.SSMIX2.StartDate);
+            cutDate = DateTime.Now.AddDays(-config.SSMIX2.exclusionDays);
 
             // SSMIX2フォルダの解析スタート
             Console.WriteLine("SSMIX2フォルダの解析スタート...");
@@ -169,6 +172,8 @@ namespace JHAllowedIDCreation
 
 
         }
+        static DateTime startDate;
+        static DateTime cutDate;
         // SSMIX2フォルダの解析
         private static async Task SSMIX2FolderParse()
         {
@@ -190,7 +195,7 @@ namespace JHAllowedIDCreation
 
             // 集計結果を CSV へ出力
             OutputToCsv();
-            
+
             Console.WriteLine("全処理が完了しました。");
         }
         static long completedPatientCount = 0;
@@ -223,8 +228,6 @@ namespace JHAllowedIDCreation
         static bool checkDirDate(string dirPath)
         {
             var visitDateFolders = Directory.GetDirectories(dirPath).OrderByDescending(name => name); 
-            DateTime startDate = new DateTime(2015, 4, 1);
-            DateTime cutDate = DateTime.Now.AddDays(-config.SSMIX2.exclusionDays);
 
             // visitDateFoldersをlinqで解析し、cutDateより新しい日付が含まれているかチェックする
             // 日付はvisitDateFolders[i]の末尾に含まれる
@@ -261,8 +264,7 @@ namespace JHAllowedIDCreation
 
                 // 診療日フォルダ（例：YYYYMMDD）が並ぶ
                 var visitDateFolders = Directory.GetDirectories(patientFolder).OrderByDescending(name => name); 
-            
-
+        
                 foreach (var visitDateFolder in visitDateFolders)
                 {
                     string visitDate = Path.GetFileName(visitDateFolder);
@@ -356,6 +358,8 @@ namespace JHAllowedIDCreation
                 Console.WriteLine($"[警告] ファイル処理エラー: {filePath}, {ex.Message}");
             }
         }
+        ConcurrentDictionary<string, ConcurrentDictionary<string, int>> pivotData = new ConcurrentDictionary<string, ConcurrentDictionary<string, int>>();
+
         static void OutputToCsv()
         {
             try
@@ -364,6 +368,7 @@ namespace JHAllowedIDCreation
                 string outputCsvFileDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\Downloads";
                 string datetime = DateTime.Now.ToString("yyyyMMddHHmmss");
                 string filename = "result" + datetime + "_Syuukei.csv";
+                string filename3 = "result" + datetime + "_pivot.csv";
                 string filename2 = "result" + datetime + "_PatientIDs.csv";
                 // inclusionPatientID
                 string newOutputCsvFile = Path.Combine(outputCsvFileDir, filename);
@@ -373,6 +378,38 @@ namespace JHAllowedIDCreation
                     foreach (var kvp in groupCounts)
                     {
                         sw.WriteLine($"{kvp.Key},{kvp.Value}");
+                    }
+                }
+                newOutputCsvFile = Path.Combine(outputCsvFileDir, filename3);
+                using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
+                {
+                    var gpDate = groupCounts.GroupBy(x => x.Key.Split(',')[1]).Select(x => x);
+                    var gpTypes = groupCounts.GroupBy(x => x.Key.Split(',')[2]).Select(x => x);
+                    sw.Write("Date,");
+                    foreach (var type in gpTypes)
+                    {
+                        sw.Write($"{type.Key},");
+                    }
+                    sw.WriteLine();
+                    foreach (var date in gpDate)
+                    {
+                        // date.Keyは日付(20100903など)
+                        // 日付に変換をtryparseして、DateTimeに変換
+                        if (!DateTime.TryParseExact(date.Key, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dateTime))
+                        {
+                            sw.Write($",");
+                        }
+                        else
+                        {
+                            // 日付をyyyy/MM/dd形式に変換
+                            sw.Write($"{dateTime.ToString("yyyy/MM/dd")},");
+                        }
+                        foreach (var type in gpTypes)
+                        {
+                            var count = date.FirstOrDefault(x => x.Key.Split(',')[2] == type.Key).Value;
+                            sw.Write($"{count},");
+                        }
+                        sw.WriteLine();
                     }
                 }
                 newOutputCsvFile = Path.Combine(outputCsvFileDir, filename2);

@@ -237,7 +237,7 @@ namespace JHAllowedIDCreation
         }
         static bool isSkipDir(string dirPath)
         {
-            var visitDateFolders = Directory.GetDirectories(dirPath).OrderByDescending(name => name); 
+            var visitDateFolders = Directory.GetDirectories(dirPath).OrderByDescending(name => name);
             bool keizou = true;
             foreach (var visitDateFolder in visitDateFolders)
             {
@@ -250,7 +250,7 @@ namespace JHAllowedIDCreation
                         return true;
                     }
                     // 診療日が取得開始日よりも新しい場合は抽出対象としてfalse保持
-                    if(visitDate > startDate)
+                    if (visitDate > startDate)
                     {
                         keizou = false;
                     }
@@ -266,8 +266,8 @@ namespace JHAllowedIDCreation
                 var fileItems = new List<(string filePath, string visitDate, string folderDataType)>();
 
                 // 診療日フォルダ（例：YYYYMMDD）が並ぶ
-                var visitDateFolders = Directory.GetDirectories(patientFolder).OrderByDescending(name => name); 
-        
+                var visitDateFolders = Directory.GetDirectories(patientFolder).OrderByDescending(name => name);
+
                 foreach (var visitDateFolder in visitDateFolders)
                 {
                     string visitDate = Path.GetFileName(visitDateFolder);

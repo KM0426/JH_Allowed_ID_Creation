@@ -7,7 +7,7 @@ namespace JHAllowedIDCreation
         public int exclusionDays { get; set; }
         public string StartDate { get; set; }
     }
-    class MNGCP
+    class NMGCP
     {
         public string db_host { get; set; }
         public int db_port { get; set; }
@@ -20,6 +20,6 @@ namespace JHAllowedIDCreation
     class Config
     {
         public SSMIX2 SSMIX2 { get; set; }
-        public MNGCP MNGCP { get; set; }
+        public NMGCP NMGCP { get; set; }
     }
 }

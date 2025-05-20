@@ -33,7 +33,7 @@ namespace JHAllowedIDCreation
         ""StartDate"": ""2015-04-01"",
         ""exclusionDays"":365        
     },
-    ""MNGCP"":{
+    ""NMGCP"":{
         ""db_host"": ""localhost"",
         ""db_port"": 5432,
         ""db_name"": ""new_odbcdb"",
@@ -135,8 +135,8 @@ namespace JHAllowedIDCreation
                         Console.WriteLine("除外患者ファイルが選択されませんでした。");
                     }
                 }
-                // configのMNGCPのDB接続できるか確認
-                string connectionString = $"Host={config.MNGCP.db_host};Port={config.MNGCP.db_port};Username={config.MNGCP.db_user};Password={config.MNGCP.db_password};Database={config.MNGCP.db_name};Encoding={config.MNGCP.db_encoding}";
+                // configのNMGCPのDB接続できるか確認
+                string connectionString = $"Host={config.NMGCP.db_host};Port={config.NMGCP.db_port};Username={config.NMGCP.db_user};Password={config.NMGCP.db_password};Database={config.NMGCP.db_name};Encoding={config.NMGCP.db_encoding}";
                 using (var connection = new NpgsqlConnection(connectionString))
                 {
                     try
@@ -145,7 +145,7 @@ namespace JHAllowedIDCreation
                         Console.WriteLine("NMGCP接続成功");
 
                         // NMGCPから患者IDを取得
-                        var query = "SELECT * FROM " + config.MNGCP.db_table_name;
+                        var query = "SELECT * FROM " + config.NMGCP.db_table_name;
                         using (var cmd = new NpgsqlCommand(query, connection))
                         using (var reader = cmd.ExecuteReader())
                         {

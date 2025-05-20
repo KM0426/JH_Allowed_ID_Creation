@@ -1,14 +1,8 @@
-﻿
-using System;
-using System.Collections.Concurrent;
+﻿using System.Text;
 using System.Globalization;
-using System.Text;
+using System.Collections.Concurrent;
 using Microsoft.WindowsAPICodePack.Dialogs;
-using System.Linq;
-using System.IO;
 using Npgsql;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Newtonsoft.Json;
 
 namespace JHAllowedIDCreation
@@ -60,7 +54,7 @@ namespace JHAllowedIDCreation
                 //config.jsonが存在する場合
                 // config.jsonを読み込み、Configクラスのインスタンスを作成する
                 string json = File.ReadAllText(configFilePath);
-                Config config = Newtonsoft.Json.JsonConvert.DeserializeObject<Config>(json);
+                Config config = JsonConvert.DeserializeObject<Config>(json);
                 if (config == null)
                 {
                     Console.WriteLine("config.jsonの読み込みに失敗しました。");
@@ -106,6 +100,7 @@ namespace JHAllowedIDCreation
                 string filePath = "";
                 using (var dialog = new CommonOpenFileDialog())
                 {
+                    dialog.Title = "除外患者IDファイル(csv)を選択してください";
                     dialog.IsFolderPicker = false;
                     dialog.Filters.Add(new CommonFileDialogFilter("CSV Files", "*.csv"));
                     if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
@@ -211,7 +206,7 @@ namespace JHAllowedIDCreation
                     long count = Interlocked.Increment(ref completedPatientCount);
                     if (!exclusionPatientID.Contains(patientId))
                     {
-                        if (!checkDirDate(patientFolder))
+                        if (!isSkipDir(patientFolder))
                         {
                             ProcessPatientFolder(patientFolder);
                             // inclusionPatientIDにpatientId追加
@@ -225,28 +220,21 @@ namespace JHAllowedIDCreation
                     }
                 });
         }
-        static bool checkDirDate(string dirPath)
+        static bool isSkipDir(string dirPath)
         {
             var visitDateFolders = Directory.GetDirectories(dirPath).OrderByDescending(name => name); 
-
-            // visitDateFoldersをlinqで解析し、cutDateより新しい日付が含まれているかチェックする
-            // 日付はvisitDateFolders[i]の末尾に含まれる
-            // 例: "20230101" のような形式
-            // 末尾の文字列を取得し、DateTimeに変換
-            // 変換できたら、cutDateより新しいかチェック
-            // 一つでも新しい日付があれば、trueを返す
-            // 変換できなかったら、スキップ
             bool keizou = true;
             foreach (var visitDateFolder in visitDateFolders)
             {
                 var lastText = visitDateFolder.Split(Path.DirectorySeparatorChar).Last();
                 if (DateTime.TryParseExact(lastText, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime visitDate))
                 {
-                    // 診療日が除外日よりも新しい場合はスキップ
+                    // 診療日が除外設定日よりも新しい場合はスキップ
                     if (visitDate > cutDate)
                     {
                         return true;
                     }
+                    // 診療日が取得開始日よりも新しい場合は抽出対象としてfalse保持
                     if(visitDate > startDate)
                     {
                         keizou = false;
@@ -282,7 +270,7 @@ namespace JHAllowedIDCreation
                     }
                 }
 
-                // 各ファイルを並列に処理（高い並列度：CPUコア数の4倍程度）
+                // 各ファイルを並列に処理
                 Parallel.ForEach(fileItems,
                     new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 16 },
                     item =>
@@ -358,8 +346,6 @@ namespace JHAllowedIDCreation
                 Console.WriteLine($"[警告] ファイル処理エラー: {filePath}, {ex.Message}");
             }
         }
-        ConcurrentDictionary<string, ConcurrentDictionary<string, int>> pivotData = new ConcurrentDictionary<string, ConcurrentDictionary<string, int>>();
-
         static void OutputToCsv()
         {
             try

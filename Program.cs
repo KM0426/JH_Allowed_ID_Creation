@@ -1,9 +1,15 @@
-﻿using System.Text;
-using System.Globalization;
+﻿using System;
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
 using Microsoft.WindowsAPICodePack.Dialogs;
+using System.Linq;
+using System.IO;
 using Npgsql;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
+
 
 namespace JHAllowedIDCreation
 {
@@ -365,6 +371,7 @@ namespace JHAllowedIDCreation
         {
             try
             {
+                Console.Write("Syuukei CSV 出力中...");
                 // user download folder
                 string outputCsvFileDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\Downloads";
                 string datetime = DateTime.Now.ToString("yyyyMMddHHmmss");
@@ -381,6 +388,22 @@ namespace JHAllowedIDCreation
                         sw.WriteLine($"{kvp.Key},{kvp.Value}");
                     }
                 }
+                Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
+
+                Console.Write("PatientIDs CSV 出力中...");
+                newOutputCsvFile = Path.Combine(outputCsvFileDir, filename2);
+                using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
+                {
+                    sw.WriteLine("出力対象患者ID");
+                    foreach (var id in inclusionPatientID)
+                    {
+                        sw.WriteLine($"{id}");
+                    }
+                }
+                Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
+                
+                Console.Write("Pivot CSV 出力中...");
+
                 newOutputCsvFile = Path.Combine(outputCsvFileDir, filename3);
                 using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
                 {
@@ -392,7 +415,9 @@ namespace JHAllowedIDCreation
                         sw.Write($"{type.Key},");
                     }
                     sw.WriteLine();
-                    foreach (var date in gpDate)
+                    Parallel.ForEach(gpDate,
+                     new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 32 },
+                    date =>
                     {
                         // date.Keyは日付(20100903など)
                         // 日付に変換をtryparseして、DateTimeに変換
@@ -411,19 +436,32 @@ namespace JHAllowedIDCreation
                             sw.Write($"{count},");
                         }
                         sw.WriteLine();
-                    }
-                }
-                newOutputCsvFile = Path.Combine(outputCsvFileDir, filename2);
-                using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
-                {
-                    sw.WriteLine("出力対象患者ID");
-                    foreach (var id in inclusionPatientID)
-                    {
-                        sw.WriteLine($"{id}");
-                    }
+                    });
+                    // foreach (var date in gpDate)
+                    //     {
+                    //         // date.Keyは日付(20100903など)
+                    //         // 日付に変換をtryparseして、DateTimeに変換
+                    //         if (!DateTime.TryParseExact(date.Key, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dateTime))
+                    //         {
+                    //             sw.Write($",");
+                    //         }
+                    //         else
+                    //         {
+                    //             // 日付をyyyy/MM/dd形式に変換
+                    //             sw.Write($"{dateTime.ToString("yyyy/MM/dd")},");
+                    //         }
+                    //         foreach (var type in gpTypes)
+                    //         {
+                    //             var count = date.FirstOrDefault(x => x.Key.Split(',')[2] == type.Key).Value;
+                    //             sw.Write($"{count},");
+                    //         }
+                    //         sw.WriteLine();
+                    //     }
                 }
 
-                Console.WriteLine($"CSV 出力完了: {newOutputCsvFile}");
+
+                Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
+                Console.WriteLine($"すべて終了しました");
                 Console.WriteLine("Press any key to exit...");
                 Console.ReadKey();
             }

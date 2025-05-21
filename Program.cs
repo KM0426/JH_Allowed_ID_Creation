@@ -304,6 +304,7 @@ namespace JHAllowedIDCreation
                 Console.WriteLine($"[警告] 患者フォルダ {patientFolder} の処理中にエラー: {ex.Message}");
             }
         }
+        static Dictionary<string, Dictionary<string, int>> pivotDicti = new Dictionary<string, Dictionary<string, int>>();
         static void ProcessFile(string filePath, string patientId, string visitDate, string folderDataType)
         {
             System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
@@ -352,6 +353,7 @@ namespace JHAllowedIDCreation
                         string key = $"{patientId},{dateStr},PPR-01";
 
                         groupCounts.AddOrUpdate(key, 1, (_, current) => current + 1);
+                        AddPivotDict(visitDate, "PPR-01");
                     });
 
                 }
@@ -360,11 +362,31 @@ namespace JHAllowedIDCreation
                     // PPR-01 以外は、フォルダ構造上の診療日 (visitDate) を利用して1件カウント
                     string key = $"{patientId},{visitDate},{dataType}";
                     groupCounts.AddOrUpdate(key, 1, (k, current) => current + 1);
+                    AddPivotDict(visitDate, dataType);
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[警告] ファイル処理エラー: {filePath}, {ex.Message}");
+            }
+        }
+        static void AddPivotDict(string date, string type)
+        {
+            if (!pivotDicti.ContainsKey(date))
+            {
+                pivotDicti.Add(date, new Dictionary<string, int>());
+                pivotDicti[date].Add(type, 1);
+            }
+            else
+            {
+                if (!pivotDicti[date].ContainsKey(type))
+                {
+                    pivotDicti[date].Add(type, 1);
+                }
+                else
+                {
+                    pivotDicti[date][type]++;
+                }
             }
         }
         static void OutputToCsv()
@@ -401,62 +423,31 @@ namespace JHAllowedIDCreation
                     }
                 }
                 Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
-                
-                Console.Write("Pivot CSV 出力中...");
 
+                Console.Write("Pivot CSV 出力中...");
+                var gpTypes = groupCounts.GroupBy(x => x.Key.Split(',')[2]);
                 newOutputCsvFile = Path.Combine(outputCsvFileDir, filename3);
                 using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
                 {
-                    var gpDate = groupCounts.GroupBy(x => x.Key.Split(',')[1]).Select(x => x);
-                    var gpTypes = groupCounts.GroupBy(x => x.Key.Split(',')[2]).Select(x => x);
                     sw.Write("Date,");
-                    foreach (var type in gpTypes)
+                    foreach (var typeStr in gpTypes)
                     {
-                        sw.Write($"{type.Key},");
+                        sw.Write(typeStr.Key + ",");
                     }
                     sw.WriteLine();
-                    Parallel.ForEach(gpDate,
-                     new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 32 },
-                    date =>
+                    foreach (var dates in pivotDicti)
                     {
-                        // date.Keyは日付(20100903など)
-                        // 日付に変換をtryparseして、DateTimeに変換
-                        if (!DateTime.TryParseExact(date.Key, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dateTime))
+                        sw.Write(dates.Key + ",");
+                        foreach (var typeStr in gpTypes)
                         {
-                            sw.Write($",");
-                        }
-                        else
-                        {
-                            // 日付をyyyy/MM/dd形式に変換
-                            sw.Write($"{dateTime.ToString("yyyy/MM/dd")},");
-                        }
-                        foreach (var type in gpTypes)
-                        {
-                            var count = date.FirstOrDefault(x => x.Key.Split(',')[2] == type.Key).Value;
-                            sw.Write($"{count},");
+                            if (dates.Value.ContainsKey(typeStr.Key))
+                            {
+                                sw.Write(dates.Value[typeStr.Key]);
+                            }
+                            sw.Write(",");
                         }
                         sw.WriteLine();
-                    });
-                    // foreach (var date in gpDate)
-                    //     {
-                    //         // date.Keyは日付(20100903など)
-                    //         // 日付に変換をtryparseして、DateTimeに変換
-                    //         if (!DateTime.TryParseExact(date.Key, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dateTime))
-                    //         {
-                    //             sw.Write($",");
-                    //         }
-                    //         else
-                    //         {
-                    //             // 日付をyyyy/MM/dd形式に変換
-                    //             sw.Write($"{dateTime.ToString("yyyy/MM/dd")},");
-                    //         }
-                    //         foreach (var type in gpTypes)
-                    //         {
-                    //             var count = date.FirstOrDefault(x => x.Key.Split(',')[2] == type.Key).Value;
-                    //             sw.Write($"{count},");
-                    //         }
-                    //         sw.WriteLine();
-                    //     }
+                    }
                 }
 
 

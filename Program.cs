@@ -405,10 +405,12 @@ namespace JHAllowedIDCreation
                 using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
                 {
                     sw.WriteLine("患者ID,診療日,データ種別,Count");
-                    foreach (var kvp in groupCounts)
+                    Parallel.ForEach(groupCounts,
+                        new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 32 },
+                        kvp =>
                     {
                         sw.WriteLine($"{kvp.Key},{kvp.Value}");
-                    }
+                    });
                 }
                 Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
 
@@ -417,10 +419,12 @@ namespace JHAllowedIDCreation
                 using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
                 {
                     sw.WriteLine("出力対象患者ID");
-                    foreach (var id in inclusionPatientID)
+                    Parallel.ForEach(inclusionPatientID,
+                    new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 32 },
+                    id =>
                     {
                         sw.WriteLine($"{id}");
-                    }
+                    });
                 }
                 Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
 

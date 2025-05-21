@@ -400,6 +400,8 @@ namespace JHAllowedIDCreation
                 string filename = "result" + datetime + "_Syuukei.csv";
                 string filename3 = "result" + datetime + "_pivot.csv";
                 string filename2 = "result" + datetime + "_PatientIDs.csv";
+                var gpTypes = groupCounts.GroupBy(x => x.Key.Split(',')[2]).Select(x => x.Key).ToList();
+
                 // inclusionPatientID
                 string newOutputCsvFile = Path.Combine(outputCsvFileDir, filename);
                 using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
@@ -413,7 +415,7 @@ namespace JHAllowedIDCreation
                     });
                 }
                 Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
-
+                groupCounts = new ConcurrentDictionary<string, int>();
                 Console.Write("PatientIDs CSV 出力中...");
                 newOutputCsvFile = Path.Combine(outputCsvFileDir, filename2);
                 using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
@@ -427,16 +429,16 @@ namespace JHAllowedIDCreation
                     });
                 }
                 Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
+                inclusionPatientID = [];
 
                 Console.Write("Pivot CSV 出力中...");
-                var gpTypes = groupCounts.GroupBy(x => x.Key.Split(',')[2]);
                 newOutputCsvFile = Path.Combine(outputCsvFileDir, filename3);
                 using (var sw = new StreamWriter(newOutputCsvFile, false, Encoding.UTF8))
                 {
                     sw.Write("Date,");
                     foreach (var typeStr in gpTypes)
                     {
-                        sw.Write(typeStr.Key + ",");
+                        sw.Write(typeStr + ",");
                     }
                     sw.WriteLine();
                     foreach (var dates in pivotDicti)
@@ -444,18 +446,17 @@ namespace JHAllowedIDCreation
                         sw.Write(dates.Key + ",");
                         foreach (var typeStr in gpTypes)
                         {
-                            if (dates.Value.ContainsKey(typeStr.Key))
+                            if (dates.Value.ContainsKey(typeStr))
                             {
-                                sw.Write(dates.Value[typeStr.Key]);
+                                sw.Write(dates.Value[typeStr]);
                             }
                             sw.Write(",");
                         }
                         sw.WriteLine();
                     }
                 }
-
-
                 Console.WriteLine($" -> 出力完了: {newOutputCsvFile}");
+                pivotDicti = new Dictionary<string, Dictionary<string, int>>();
                 Console.WriteLine($"すべて終了しました");
                 Console.WriteLine("Press any key to exit...");
                 Console.ReadKey();

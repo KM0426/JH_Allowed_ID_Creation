@@ -37,7 +37,7 @@ namespace JHAllowedIDCreation
         ""dataPath"": ""D:\\SSMIX2\\data"",
         ""getChikenID"": false,
         ""StartDate"": ""2015-04-01"",
-        ""exclusionDays"":365        
+        ""exclusionDays"":300        
     },
     ""NMGCP"":{
         ""db_host"": ""localhost"",
@@ -106,33 +106,19 @@ namespace JHAllowedIDCreation
                 string filePath = "";
                 using (var dialog = new CommonOpenFileDialog())
                 {
-                    dialog.Title = "除外患者IDファイル(csv)を選択してください";
+                    dialog.Title = "除外患者IDファイル(xlsx)を選択してください";
                     dialog.IsFolderPicker = false;
-                    dialog.Filters.Add(new CommonFileDialogFilter("CSV Files", "*.csv"));
+                    dialog.Filters.Add(new CommonFileDialogFilter("Excel Files", "*.xlsx"));
                     if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
                     {
                         filePath = dialog.FileName;
                         // filePathのデータを読み込む
                         Console.WriteLine("選択されたファイル: " + filePath);
-                        // csvファイルを読み込む
-                        // ヘッダー無し、カンマ区切り、Shift_JIS
-                        // すべての行を読み込む
-                        var TempExclusionPatientID = File.ReadAllLines(filePath, Encoding.GetEncoding("UTF-8"));
-                        if (TempExclusionPatientID.First()?.Split(',').Length > 1)
-                        {
-                            Console.WriteLine("除外患者ファイルが選択されませんでした。");
-                            Console.WriteLine("除外患者ファイルは、一列に患者IDが並んでいる必要があります。");
-                            Console.WriteLine("例:");
-                            Console.WriteLine("0000000001");
-                            Console.WriteLine("0000000002");
-                            Console.WriteLine("0000000003");
-                            Console.WriteLine("0000000004");
-                            Console.WriteLine("0000000005");
-                            Console.WriteLine("Press any key to exit...");
-                            Console.ReadKey();
-                            return;
-                        }
-
+                        // ClosedXMLを使ってxlsxファイルを読み込む
+                        var workbook = new ClosedXML.Excel.XLWorkbook(filePath);
+                        var worksheet = workbook.Worksheet(1); // 1枚目のシートを取得
+                                                               // 1列目のデータをすべて取得
+                        var TempExclusionPatientID = worksheet.Column(1).CellsUsed().Select(cell => cell.GetString()).ToList();                        
                         // TempExclusionPatientIDを10桁左0埋めの半角英数字に変換してexclusionPatientIDに追加
                         exclusionPatientID = TempExclusionPatientID.Select(x => x.Trim().PadLeft(10, '0')).ToArray();
                     }
